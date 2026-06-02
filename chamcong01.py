@@ -306,21 +306,11 @@ def get_settings():
 # ======================================================
 def check_company_network():
 
-    hostname = socket.gethostname()
-
-    local_ip = socket.gethostbyname(
-        hostname
-    )
-
-    allowed_network = "10.10.10."
-
-    if local_ip.startswith(
-        allowed_network
-    ):
+    
 
         return True
 
-    return False
+
 
 # ======================================================
 # CALCULATE STATUS
