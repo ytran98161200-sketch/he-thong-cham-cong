@@ -182,13 +182,10 @@ INSERT OR IGNORE INTO users
 VALUES (
 
     'admin',
-
-    '123',
-
+    'MatKhauMoi2026',
     'admin',
-
     'ADMIN'
-)
+    )
 """)
 
 conn.commit()
