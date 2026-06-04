@@ -603,8 +603,25 @@ def load_attendance():
 # SESSION
 # ======================================================
 if "logged_in" not in st.session_state:
-
     st.session_state.logged_in = False
+
+if "role" not in st.session_state:
+    st.session_state.role = ""
+
+if "username" not in st.session_state:
+    st.session_state.username = ""
+
+if "employee_id" not in st.session_state:
+    st.session_state.employee_id = ""
+
+if "goto_menu" not in st.session_state:
+    st.session_state.goto_menu = None
+
+if "selected_leave_id" not in st.session_state:
+    st.session_state.selected_leave_id = None
+
+if "show_bell" not in st.session_state:
+    st.session_state.show_bell = False
 
 # ======================================================
 # LOGIN PAGE
@@ -666,18 +683,18 @@ st.sidebar.title(
 
 st.sidebar.success(
     f"👋 Xin chào: "
-    f"{st.session_state.username}"
+    f"{st.session_state.get('username','')}"
 )
 
 st.sidebar.write(
     f"🔐 Quyền: "
-    f"{st.session_state.role}"
+    f"{st.session_state.get('role','')}"
 )
 
 
 if st.sidebar.button("Đăng xuất"):
 
-    st.session_state.logged_in = False
+    st.session_state.clear()
 
     st.rerun()
 # ==========================
@@ -709,10 +726,17 @@ else:
         params=(st.session_state.employee_id,)
     )["total"][0]
 
-st.sidebar.button(
-    f"🔔 Thông Báo ({unread_count})",
-    use_container_width=True
-)
+# show_notice = st.sidebar.button(
+#     f"🔔 Thông Báo ({unread_count})",
+#     use_container_width=True
+# )
+
+# if show_notice:
+
+#     if st.session_state.role == "admin":
+#         menu = "Duyệt Đơn"
+#     else:
+#         menu = "Thông Báo"
 
 # if show_notice:
 #     st.session_state.show_notice = True
@@ -740,7 +764,8 @@ if st.session_state.role == "admin":
             "Duyệt Đơn",
 
             "Thiết Lập Giờ",
-            "Thông Báo"
+
+            f"🔔 Thông Báo ({unread_count})"
         ]
     )
 
@@ -758,11 +783,56 @@ else:
             "Thông Báo"
         ]
     )
+# if st.sidebar.button(
+#     f"🔔 Thông Báo ({unread_count})"
+# ):
 
+#     st.session_state.goto_menu = "Thông Báo"
+
+#     st.rerun()
+
+# if st.session_state.goto_menu is not None:
+
+#     menu = st.session_state.goto_menu
+
+#     st.session_state.goto_menu = None
+if st.session_state.goto_menu is not None:
+    menu = st.session_state.goto_menu
+    st.session_state.goto_menu = None
+
+# st.sidebar.write(
+#     "DEBUG MENU =",
+#     menu
+# )
 # ======================================================
 # DASHBOARD
 # ======================================================
 if menu == "Dashboard":
+
+    top1, top2 = st.columns([9,1])
+
+    with top2:
+
+        if st.button(
+            f"🔔 {unread_count}",
+            key="top_bell"
+        ):
+
+            if st.session_state.role == "admin":
+
+                if unread_count > 0:
+                    st.session_state.goto_menu = "Duyệt Đơn"
+
+                else:
+                    st.session_state.goto_menu = (
+                        f"🔔 Thông Báo ({unread_count})"
+                    )
+
+        else:
+
+            st.session_state.goto_menu = "Thông Báo"
+
+        st.rerun()
 
     st.title("📊 DASHBOARD")
 
@@ -862,13 +932,13 @@ elif menu == "Chấm Công":
             use_container_width=True
         ):
 
-            if not check_company_network():
+            # if not check_company_network():
 
-                st.error(
-                    "❌ Không dùng wifi công ty."
-                )
+            #     st.error(
+            #         "❌ Không dùng wifi công ty."
+            #     )
 
-            else:
+            # else:
 
                 success, msg = check_in(
                     emp_id
@@ -1197,32 +1267,80 @@ elif menu == "Thiết Lập Giờ":
 # ======================================================
 # THONG BAO
 # ======================================================
-elif menu == "Thông Báo":
+elif menu.startswith("🔔 Thông Báo"):
 
     st.title("🔔 THÔNG BÁO")
 
-    df_notice = pd.read_sql_query(
-        """
-        SELECT *
-        FROM notifications
-        WHERE employee_id = ?
-        ORDER BY id DESC
-        """,
-        conn,
-        params=(st.session_state.employee_id,)
-    )
+    if st.session_state.role == "admin":
 
-    st.dataframe(df_notice, use_container_width=True)
+        pending = pd.read_sql_query(
+            """
+            SELECT COUNT(*) total
+            FROM leave_requests
+            WHERE status='PENDING'
+            """,
+            conn
+        )["total"][0]
 
-    cursor.execute(
-        """
-        UPDATE notifications
-        SET is_read = 1
-        WHERE employee_id = ?
-        """,
-        (st.session_state.employee_id,)
-    )
-    conn.commit()
+        if pending > 0:
+            st.warning(
+                f"📌 Có {pending} đơn xin phép cần duyệt."
+            )
+
+            if st.button("📂 MỞ DUYỆT ĐƠN"):
+
+                st.session_state.goto_menu = "Duyệt Đơn"
+
+                st.rerun()
+
+        else:
+            st.success("Không có đơn nào cần duyệt.")
+
+    else:
+
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        check_df = pd.read_sql_query(
+            """
+            SELECT COUNT(*) total
+            FROM attendance
+            WHERE employee_id=?
+            AND date=?
+            """,
+            conn,
+            params=(
+                st.session_state.employee_id,
+                today
+            )
+        )
+
+        if check_df["total"][0] == 0:
+            st.warning(
+                "📌 Bạn chưa chấm công hôm nay."
+            )
+
+            if st.button("🕒 MỞ CHẤM CÔNG"):
+
+                st.session_state.goto_menu = "Chấm Công"
+
+                st.rerun()
+
+        df_notice = pd.read_sql_query(
+            """
+            SELECT message,created_at
+            FROM notifications
+            WHERE employee_id=?
+            ORDER BY id DESC
+            """,
+            conn,
+            params=(st.session_state.employee_id,)
+        )
+
+        if not df_notice.empty:
+            st.dataframe(
+                df_notice,
+                use_container_width=True
+            )
 
 # ======================================================
 # DON XIN PHEP
@@ -1256,43 +1374,212 @@ elif menu == "Đơn Xin Phép":
         conn.commit()
         st.success("Đã gửi đơn")
 
-    df = pd.read_sql_query(
-        f"SELECT * FROM leave_requests WHERE employee_id='{st.session_state.employee_id}' ORDER BY id DESC",
+    # =========================
+    # ĐƠN CHỜ DUYỆT
+    # =========================
+    st.subheader("🔵 ĐƠN CHỜ DUYỆT")
+
+    df_pending = pd.read_sql_query(
+        """
+        SELECT *
+        FROM leave_requests
+        WHERE status='PENDING'
+        ORDER BY id DESC
+        """,
         conn
     )
-    st.dataframe(df,use_container_width=True)
+
+    st.dataframe(
+        df_pending,
+        use_container_width=True
+    )
+
+    st.markdown("---")
+
+# =========================
+# ĐƠN ĐÃ DUYỆT
+# =========================
+    st.subheader("🟢 ĐƠN ĐÃ DUYỆT")
+
+    df_approved = pd.read_sql_query(
+        """
+        SELECT *
+        FROM leave_requests
+        WHERE status='APPROVED'
+        ORDER BY id DESC
+        """,
+        conn
+    )
+
+    st.dataframe(
+        df_approved,
+        use_container_width=True
+    )
+
+    st.markdown("---")
+
+    # =========================
+    # ĐƠN TỪ CHỐI
+    # =========================
+    st.subheader("🔴 ĐƠN ĐÃ TỪ CHỐI")
+
+    df_rejected = pd.read_sql_query(
+        """
+        SELECT *
+        FROM leave_requests
+        WHERE status='REJECTED'
+        ORDER BY id DESC
+        """,
+        conn
+    )
+
+    st.dataframe(
+        df_rejected,
+        use_container_width=True
+    )
+
+    st.markdown("---")
+    # st.dataframe(df,use_container_width=True)
 
 # ======================================================
 # DUYET DON
 # ======================================================
 elif menu == "Duyệt Đơn":
     st.title("✅ DUYỆT ĐƠN")
+    st.subheader("🔵 ĐƠN CHỜ DUYỆT")
 
-    df = pd.read_sql_query(
-        "SELECT * FROM leave_requests ORDER BY id DESC",
+    df_pending = pd.read_sql_query(
+        """
+        SELECT *
+        FROM leave_requests
+        WHERE status='PENDING'
+        ORDER BY id DESC
+        """,
         conn
     )
 
-    st.dataframe(df,use_container_width=True)
+    st.dataframe(df_pending, use_container_width=True)
 
-    don_id = st.number_input("ID đơn",0,999999,0)
+    st.markdown("---")
 
-    c1,c2 = st.columns(2)
+    st.subheader("🟢 ĐƠN ĐÃ DUYỆT")
 
-    with c1:
-        if st.button("✅ DUYỆT"):
-            cursor.execute(
-                "UPDATE leave_requests SET status='APPROVED' WHERE id=?",
-                (int(don_id),)
+    df_approved = pd.read_sql_query(
+        """
+        SELECT *
+        FROM leave_requests
+        WHERE status='APPROVED'
+        ORDER BY id DESC
+        """,
+        conn
+    )
+
+    st.dataframe(df_approved, use_container_width=True)
+
+    st.markdown("---")
+
+    st.subheader("🔴 ĐƠN ĐÃ TỪ CHỐI")
+
+    df_rejected = pd.read_sql_query(
+        """
+        SELECT *
+        FROM leave_requests
+        WHERE status='REJECTED'
+        ORDER BY id DESC
+        """,
+        conn
+    )
+
+    for _, row in df_pending.iterrows():
+ 
+        col1, col2, col3, col4, col5 = st.columns([1,2,2,2,1])
+
+        col1.write(row["id"])
+        col2.write(row["employee_id"])
+        col3.write(row["leave_type"])
+        col4.write(row["from_date"])
+
+        if col5.button(
+            "👁️",
+            key=f"view_{row['id']}"
+        ):
+            st.session_state.selected_leave_id = row["id"]
+    if st.session_state.selected_leave_id is not None:
+
+        st.markdown("---")
+
+        st.subheader("📄 CHI TIẾT ĐƠN")
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM leave_requests
+            WHERE id=?
+            """,
+            (
+                st.session_state.selected_leave_id,
             )
-            conn.commit()
-            st.success("Đã duyệt")
+        )
 
-    with c2:
-        if st.button("❌ TỪ CHỐI"):
-            cursor.execute(
-                "UPDATE leave_requests SET status='REJECTED' WHERE id=?",
-                (int(don_id),)
-            )
-            conn.commit()
-            st.error("Đã từ chối")
+        detail = None
+
+        if detail:
+
+            st.write(f"**Nhân viên:** {detail[1]}")
+            st.write(f"**Loại đơn:** {detail[2]}")
+            st.write(f"**Từ ngày:** {detail[3]}")
+            st.write(f"**Đến ngày:** {detail[5]}")
+            st.write(f"**Lý do:** {detail[7]}")
+                
+
+        c1, c2 = st.columns(2)
+
+        with c1:
+
+            if st.button(
+                "✅ DUYỆT",
+                key="approve_btn"
+            ):
+
+                cursor.execute(
+                    """
+                    UPDATE leave_requests
+                    SET status='APPROVED'
+                    WHERE id=?
+                    """,
+                    (
+                        st.session_state.selected_leave_id,
+                    )
+                )
+
+                conn.commit()
+
+                st.session_state.selected_leave_id = None
+
+                st.rerun()
+
+        with c2:
+
+            if st.button(
+                "❌ TỪ CHỐI",
+                key="reject_btn"
+            ):
+
+                cursor.execute(
+                    """
+                    UPDATE leave_requests
+                    SET status='REJECTED'
+                    WHERE id=?
+                    """,
+                    (
+                        st.session_state.selected_leave_id,
+                    )
+                )
+
+                conn.commit()
+
+                st.session_state.selected_leave_id = None
+
+                st.rerun()   
+
+ 
